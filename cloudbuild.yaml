@@ -1,0 +1,42 @@
+steps:
+  - name: 'gcr.io/${PROJECT_ID}/terraform:1.3.9'
+    dir: terraform
+    args:
+      - '-c'
+      - |
+        sed -i s/TENANT/$_TENANT/g backend.tf
+        sed -i s/PROJECT_ID/$PROJECT_ID/g backend.tf
+        terraform init
+    id: terraform init
+    entrypoint: sh
+  - name: 'gcr.io/${PROJECT_ID}/terraform:1.3.9'
+    dir: terraform
+    args:
+      - '-c'
+      - |-
+        export TF_VAR_project_id=$PROJECT_ID
+        export TF_VAR_http_status=$_EXPECTED_HTTP_STATUS
+        export TF_VAR_tenant=$_TENANT
+        sed -i s/TENANT/$_TENANT/g backend.tf
+        sed -i s/PROJECT_ID/$PROJECT_ID/g backend.tf
+        if ! terraform apply -input=false -auto-approve ;  then 
+          terraform destroy -input=false -auto-approve
+          return 1
+        fi
+    id: terraform apply
+    entrypoint: sh
+  - name: gcr.io/cloud-builders/git
+    args: ['tag', $_TENANT]
+    id: git tag
+  - name: gcr.io/cloud-builders/git
+    args: ['push', 'origin', $_TENANT]
+    id: git push tag
+logsBucket: '${_LOGS_BUCKET}'
+substitutions:
+    _LOGS_BUCKET: 'gs://${PROJECT_ID}-cloudbuild-logs/${_TENANT}'   
+    _EXPECTED_HTTP_STATUS: '200'
+    _TENANT: 'ACME'
+options:
+  dynamic_substitutions: true
+  logging: GCS_ONLY
+timeout: 86400s
